@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clasificador de ropa HD</title>
+<style>
+  :root {
+    --fondo: #f6f5f1;
+    --tarjeta: #ffffff;
+    --texto: #1f1e1a;
+    --suave: #6b6a63;
+    --borde: #dcdad2;
+    --acento: #c2562d;
+    --barra: #e8e6de;
+    --zona: #efede6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #181816;
+      --tarjeta: #232320;
+      --texto: #ecebe5;
+      --suave: #9a988f;
+      --borde: #3a3934;
+      --acento: #e5784e;
+      --barra: #33322d;
+      --zona: #1c1c1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px;
+    background: var(--fondo); color: var(--texto);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--suave); margin: 0 0 20px; }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  .tarjeta {
+    background: var(--tarjeta); border: 1px solid var(--borde);
+    border-radius: 12px; padding: 16px;
+  }
+  #zona {
+    width: 100%; aspect-ratio: 1; border-radius: 8px; background: var(--zona);
+    border: 2px dashed var(--borde); display: flex; align-items: center; justify-content: center;
+    overflow: hidden; text-align: center; color: var(--suave); padding: 12px;
+  }
+  #zona.arrastrando { border-color: var(--acento); }
+  #zona img, #zona video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button, label.boton {
+    font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--borde); background: var(--tarjeta); color: var(--texto);
+  }
+  button:hover, label.boton:hover { border-color: var(--acento); }
+  button.principal { background: var(--acento); border-color: var(--acento); color: #fff; }
+  input[type=file] { display: none; }
+  .oculto { display: none !important; }
+  .resultado { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  #emoji { font-size: 3.6rem; line-height: 1; min-width: 64px; text-align: center; }
+  #nombre { font-size: 1.5rem; font-weight: 700; color: var(--acento); }
+  #confianza { color: var(--suave); }
+  .fila { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: .9rem; }
+  .fila .n { width: 120px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fila .pista { flex: 1; height: 14px; background: var(--barra); border-radius: 7px; overflow: hidden; }
+  .fila .relleno { height: 100%; width: 0; background: var(--acento); transition: width .25s; }
+  .fila .p { width: 48px; text-align: right; color: var(--suave); font-variant-numeric: tabular-nums; }
+  .fila.top .n { color: var(--acento); font-weight: 600; }
+  .vista { display: flex; align-items: center; gap: 12px; margin-top: 14px; color: var(--suave); font-size: .85rem; }
+  #vista { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; background: var(--zona); flex: none; }
+  #error { color: #c0392b; margin-top: 8px; min-height: 1.2em; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Clasificador de ropa HD</h1>
+  <p class="sub">Sube una foto de una prenda (o toma una con la cámara) y la red neuronal te dice qué es.</p>
+
+  <div class="grid">
+    <section class="tarjeta">
+      <div id="zona">
+        <span id="indicacion">Arrastra una foto aquí<br>o usa los botones de abajo</span>
+        <img id="foto" class="oculto" alt="Foto seleccionada">
+        <video id="video" class="oculto" autoplay playsinline muted></video>
+      </div>
+      <div class="botones" id="botonesBase">
+        <label class="boton" for="archivo">Subir foto</label>
+        <input id="archivo" type="file" accept="image/*">
+        <button id="abrirCamara" type="button">Usar cámara</button>
+      </div>
+      <div class="botones oculto" id="botonesCamara">
+        <button id="tomarFoto" type="button" class="principal">Tomar foto</button>
+        <button id="cancelarCamara" type="button">Cancelar</button>
+      </div>
+    </section>
+
+    <section class="tarjeta">
+      <div class="resultado">
+        <div id="emoji">❓</div>
+        <div>
+          <div id="nombre">?</div>
+          <div id="confianza">Sube una foto para empezar</div>
+        </div>
+      </div>
+      <div id="barras"></div>
+      <div class="vista oculto" id="bloqueVista">
+        <img id="vista" alt="Lo que ve la red">
+        <span id="textoVista"></span>
+      </div>
+      <div id="error"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// Traducción y emoji de las clases (los nombres vienen de las carpetas del dataset).
+// Si una clase no está aquí, se muestra con su nombre original.
+const TRADUCCION = {
+  'dress':      { nombre: 'Vestido',            emoji: '👗' },
+  'hat':        { nombre: 'Sombrero',           emoji: '🧢' },
+  'longsleeve': { nombre: 'Manga larga',        emoji: '🧶' },
+  'outwear':    { nombre: 'Abrigo',            emoji: '🧥' },
+  'pants':      { nombre: 'Pantalón',           emoji: '👖' },
+  'shirt':      { nombre: 'Camisa',             emoji: '👔' },
+  'shoes':      { nombre: 'Zapatos',            emoji: '👟' },
+  'shorts':     { nombre: 'Shorts',             emoji: '🩳' },
+  'skirt':      { nombre: 'Falda',              emoji: '🎀' },
+  't-shirt':    { nombre: 'Camiseta',           emoji: '👕' },
+};
+function info(clase) {
+  return TRADUCCION[clase] || { nombre: clase, emoji: '🏷️' };
+}
+
+const $ = id => document.getElementById(id);
+const zona = $('zona'), foto = $('foto'), video = $('video');
+let urlFoto = null;
+let flujo = null;
+
+// ---------- Resultado ----------
+let filas = [];
+function construirBarras(probabilidades) {
+  $('barras').innerHTML = '';
+  filas = probabilidades.map(p => {
+    const f = document.createElement('div');
+    f.className = 'fila';
+    f.innerHTML = `<span class="n"></span><div class="pista"><div class="relleno"></div></div><span class="p">0%</span>`;
+    f.querySelector('.n').textContent = info(p.clase).nombre;
+    $('barras').appendChild(f);
+    return f;
+  });
+}
+
+function mostrarResultado(d) {
+  if (filas.length !== d.probabilidades.length) construirBarras(d.probabilidades);
+  const c = info(d.clase);
+  $('emoji').textContent = c.emoji;
+  $('nombre').textContent = c.nombre;
+  $('confianza').textContent = `Confianza: ${(d.probabilidades[d.indice].p * 100).toFixed(1)}%`;
+  filas.forEach((f, i) => {
+    const p = d.probabilidades[i].p;
+    f.querySelector('.relleno').style.width = (p * 100) + '%';
+    f.querySelector('.p').textContent = (p * 100).toFixed(1) + '%';
+    f.classList.toggle('top', i === d.indice);
+  });
+  $('vista').src = d.vista;
+  $('textoVista').textContent =
+    `Esto es lo que ve la red: tu foto reducida a ${d.tam}×${d.tam} píxeles, a color.`;
+  $('bloqueVista').classList.remove('oculto');
+}
+
+function mostrarError(texto) { $('error').textContent = texto || ''; }
+
+// ---------- Mostrar la foto y mandarla al servidor ----------
+let peticion = 0;
+async function clasificar(blob) {
+  mostrarError('');
+  if (urlFoto) URL.revokeObjectURL(urlFoto);
+  urlFoto = URL.createObjectURL(blob);
+  foto.src = urlFoto;
+  foto.classList.remove('oculto');
+  $('indicacion').classList.add('oculto');
+  $('confianza').textContent = 'Analizando…';
+
+  const datos = new FormData();
+  datos.append('imagen', blob, 'foto.jpg');
+  const mia = ++peticion;
+  try {
+    const resp = await fetch('/predecir', { method: 'POST', body: datos });
+    let json = null;
+    try { json = await resp.json(); } catch (_) {}
+    if (!resp.ok) throw new Error((json && json.error) || 'Error del servidor');
+    if (mia !== peticion) return;
+    mostrarResultado(json);
+  } catch (err) {
+    if (mia !== peticion) return;
+    $('confianza').textContent = 'No se pudo clasificar';
+    mostrarError(err.message.includes('fetch')
+      ? 'No se pudo contactar con el servidor. ¿Está corriendo servidor.py?'
+      : err.message);
+  }
+}
+
+// ---------- Subir archivo y arrastrar ----------
+$('archivo').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) { detenerCamara(); clasificar(f); }
+});
+['dragenter', 'dragover'].forEach(ev => zona.addEventListener(ev, e => {
+  e.preventDefault(); zona.classList.add('arrastrando');
+}));
+['dragleave', 'drop'].forEach(ev => zona.addEventListener(ev, e => {
+  e.preventDefault(); zona.classList.remove('arrastrando');
+}));
+zona.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) { detenerCamara(); clasificar(f); }
+  else mostrarError('Suelta un archivo de imagen.');
+});
+
+// ---------- Cámara ----------
+$('abrirCamara').addEventListener('click', async () => {
+  mostrarError('');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    mostrarError('Este navegador no permite usar la cámara.');
+    return;
+  }
+  try {
+    flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (err) {
+    mostrarError('No se pudo acceder a la cámara. Revisa los permisos del navegador.');
+    return;
+  }
+  video.srcObject = flujo;
+  video.classList.remove('oculto');
+  foto.classList.add('oculto');
+  $('indicacion').classList.add('oculto');
+  $('botonesBase').classList.add('oculto');
+  $('botonesCamara').classList.remove('oculto');
+});
+
+function detenerCamara() {
+  if (flujo) { flujo.getTracks().forEach(t => t.stop()); flujo = null; }
+  video.srcObject = null;
+  video.classList.add('oculto');
+  $('botonesCamara').classList.add('oculto');
+  $('botonesBase').classList.remove('oculto');
+  if (!urlFoto) $('indicacion').classList.remove('oculto');
+  else foto.classList.remove('oculto');
+}
+
+$('cancelarCamara').addEventListener('click', detenerCamara);
+
+$('tomarFoto').addEventListener('click', () => {
+  if (!video.videoWidth) { mostrarError('La cámara aún no está lista.'); return; }
+  const lienzo = document.createElement('canvas');
+  lienzo.width = video.videoWidth;
+  lienzo.height = video.videoHeight;
+  lienzo.getContext('2d').drawImage(video, 0, 0);
+  lienzo.toBlob(blob => {
+    detenerCamara();
+    if (blob) clasificar(blob);
+    else mostrarError('No se pudo capturar la foto.');
+  }, 'image/jpeg', 0.92);
+});
+</script>
+</body>
+</html>
